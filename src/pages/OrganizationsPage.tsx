@@ -2,14 +2,27 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Building2, Plus, Trash2, Eye, X } from 'lucide-react'
-import { useCreateOrganization, useDeleteOrganization, useOrganizations } from '@/api/hooks'
+import { Building2, Plus, Trash2, Eye, X, MessageSquare } from 'lucide-react'
+import {
+  useCreateOrganization,
+  useDeleteOrganization,
+  useOrganizations,
+  useTelegramGroups,
+} from '@/api/hooks'
 import { getValidationErrorMessage } from '@/api/validation'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Badge } from '@/components/ui/badge'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { StepProgressModal } from '@/components/shared/StepProgressModal'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
@@ -18,7 +31,11 @@ import { usePageHeader } from '@/components/layout/PageHeaderProvider'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useToastStore } from '@/store/toast'
 import { organizationCreateSchema, type OrganizationCreateValues } from '@/validation/schemas'
-import type { CreateOrganizationResponse, OrganizationListItem } from '@/types/api'
+import type {
+  CreateOrganizationRequest,
+  CreateOrganizationResponse,
+  OrganizationListItem,
+} from '@/types/api'
 import { isAxiosError } from 'axios'
 
 const stepsTemplate = [
@@ -40,14 +57,15 @@ export function OrganizationsPage() {
     })
   }, [setHeader])
 
-  const { data, isLoading, isError, refetch } = useOrganizations()
-  const createOrg = useCreateOrganization()
-  const deleteOrg = useDeleteOrganization()
-  const pushToast = useToastStore((state) => state.push)
   const [searchParams] = useSearchParams()
   const openFromQuery = searchParams.get('create') === '1'
 
   const [open, setOpen] = useState(openFromQuery)
+  const { data, isLoading, isError, refetch } = useOrganizations()
+  const { data: telegramGroups } = useTelegramGroups(true, open)
+  const createOrg = useCreateOrganization()
+  const deleteOrg = useDeleteOrganization()
+  const pushToast = useToastStore((state) => state.push)
   const [progressOpen, setProgressOpen] = useState(false)
   const [createResult, setCreateResult] = useState<CreateOrganizationResponse | null>(null)
   const [emails, setEmails] = useState<string[]>([])
@@ -56,7 +74,7 @@ export function OrganizationsPage() {
 
   const form = useForm<OrganizationCreateValues>({
     resolver: zodResolver(organizationCreateSchema),
-    defaultValues: { name: '', telegram_chat_id: '', users: [] },
+    defaultValues: { name: '', telegram_group_id: undefined, users: [] },
   })
 
   const sorted = useMemo(() => {
@@ -90,11 +108,14 @@ export function OrganizationsPage() {
   const handleCreate = form.handleSubmit(async (values) => {
     try {
       setProgressOpen(true)
-      const response = await createOrg.mutateAsync({
+      const payload: CreateOrganizationRequest = {
         name: values.name,
-        telegram_chat_id: values.telegram_chat_id || null,
         users: emails.length > 0 ? emails : null,
-      })
+      }
+      if (values.telegram_group_id) {
+        payload.telegram_group_id = values.telegram_group_id
+      }
+      const response = await createOrg.mutateAsync(payload)
       setCreateResult(response)
       pushToast({ title: 'Organization created', variant: 'success' })
       form.reset()
@@ -154,7 +175,7 @@ export function OrganizationsPage() {
                   <th className="py-3">Slug</th>
                   <th className="py-3">Grafana ID</th>
                   <th className="py-3">GlitchTip ID</th>
-                  <th className="py-3">Telegram Chat</th>
+                  <th className="py-3">Telegram</th>
                   <th className="py-3">Status</th>
                   <th className="py-3">Created At</th>
                   <th className="py-3 text-right">Actions</th>
@@ -167,7 +188,16 @@ export function OrganizationsPage() {
                     <td className="py-3 text-slate-500">{org.slug}</td>
                     <td className="py-3 text-slate-500">{org.grafana_org_id ?? '-'}</td>
                     <td className="py-3 text-slate-500">{org.glitchtip_org_id ?? '-'}</td>
-                    <td className="py-3 text-slate-500">-</td>
+                    <td className="py-3 text-slate-500">
+                      {org.telegram_group_name ? (
+                        <Badge className="inline-flex items-center gap-2">
+                          <MessageSquare size={12} />
+                          {org.telegram_group_name}
+                        </Badge>
+                      ) : (
+                        <span className="text-slate-400">Not set</span>
+                      )}
+                    </td>
                     <td className="py-3">
                       <span
                         className={`rounded-full px-3 py-1 text-xs font-semibold ${
@@ -220,7 +250,42 @@ export function OrganizationsPage() {
                 <p className="mt-1 text-xs text-rose-500">{form.formState.errors.name.message}</p>
               ) : null}
             </div>
-            <Input placeholder="Telegram chat id (optional)" {...form.register('telegram_chat_id')} />
+            <div>
+              <input
+                type="hidden"
+                {...form.register('telegram_group_id', {
+                  setValueAs: (value) => (value ? value : undefined),
+                })}
+              />
+              <Select
+                value={form.watch('telegram_group_id') ?? undefined}
+                onValueChange={(value) =>
+                  form.setValue('telegram_group_id', value, { shouldDirty: true })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a Telegram group (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(telegramGroups ?? []).length === 0 ? (
+                    <SelectItem value="no-groups" disabled>
+                      No available Telegram groups
+                    </SelectItem>
+                  ) : (
+                    (telegramGroups ?? []).map((group) => (
+                      <SelectItem key={group.id} value={group.id}>
+                        {group.name} ({group.chat_id})
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+              {form.formState.errors.telegram_group_id ? (
+                <p className="mt-1 text-xs text-rose-500">
+                  {form.formState.errors.telegram_group_id.message}
+                </p>
+              ) : null}
+            </div>
             <div>
               <div className="text-xs font-semibold uppercase text-slate-400">Users</div>
               <div className="mt-2 flex gap-2">

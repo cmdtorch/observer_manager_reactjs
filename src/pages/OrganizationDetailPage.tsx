@@ -6,7 +6,7 @@ import {
   Globe,
   KeyRound,
   Layers,
-  MessageSquare,
+  Plug,
   Plus,
   RefreshCw,
   ShieldCheck,
@@ -25,6 +25,7 @@ import {
   useListUsers,
   useOrganization,
   useSetupTelegram,
+  useTelegramGroups,
 } from '@/api/hooks'
 import { getValidationErrorMessage } from '@/api/validation'
 import { Card } from '@/components/ui/card'
@@ -33,6 +34,14 @@ import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Badge } from '@/components/ui/badge'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { AddUserPanel } from '@/components/shared/AddUserPanel'
 import { KeyMaskDisplay } from '@/components/shared/KeyMaskDisplay'
 import { PlatformBadge } from '@/components/shared/PlatformBadge'
@@ -85,12 +94,16 @@ export function OrganizationDetailPage() {
   const pushToast = useToastStore((state) => state.push)
 
   const [telegramOpen, setTelegramOpen] = useState(false)
-  const [chatId, setChatId] = useState('')
+  const [selectedTelegramGroupId, setSelectedTelegramGroupId] = useState<string | undefined>(
+    undefined,
+  )
   const [apiKeyOpen, setApiKeyOpen] = useState(false)
   const [appOpen, setAppOpen] = useState(false)
   const [createdKey, setCreatedKey] = useState<string | null>(null)
   const [createdApp, setCreatedApp] = useState<CreateApplicationResponse | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<{ type: 'key' | 'app'; id: string } | null>(null)
+
+  const { data: telegramGroups } = useTelegramGroups(true, telegramOpen)
 
   useDocumentTitle(`Observer Manager | ${org?.name ?? 'Organization'}`)
 
@@ -104,6 +117,12 @@ export function OrganizationDetailPage() {
       ],
     })
   }, [org?.name, org?.slug, setHeader])
+
+  useEffect(() => {
+    if (telegramOpen) {
+      setSelectedTelegramGroupId(org?.telegram_group_id ?? undefined)
+    }
+  }, [org?.telegram_group_id, telegramOpen])
 
   const grafanaUrl = import.meta.env.VITE_GRAFANA_BASE_URL
   const glitchtipUrl = import.meta.env.VITE_GLITCHTIP_BASE_URL
@@ -141,15 +160,31 @@ export function OrganizationDetailPage() {
   }
 
   const summaryFields = useMemo(() => {
+    const telegramSummary = org?.telegram_group
+      ? `${org.telegram_group.name} (${org.telegram_group.chat_id})`
+      : 'No Telegram group linked'
     return [
       { label: 'Grafana Org ID', value: org?.grafana_org_id ?? '-' },
       { label: 'GlitchTip Org ID', value: org?.glitchtip_org_id ?? '-' },
-      { label: 'Telegram Chat', value: org?.telegram_chat ?? 'Not configured' },
+      { label: 'Telegram', value: telegramSummary },
       { label: 'Status', value: org?.is_active ? 'Active' : 'Inactive' },
       { label: 'Created', value: org?.created_at ? new Date(org.created_at).toLocaleString() : '-' },
       { label: 'Updated', value: org?.updated_at ? new Date(org.updated_at).toLocaleString() : '-' },
     ]
   }, [org])
+
+  const telegramGroupOptions = useMemo(() => {
+    const entries = [
+      org?.telegram_group ?? null,
+      ...(telegramGroups ?? []),
+    ].filter((group): group is NonNullable<typeof group> => Boolean(group))
+    const seen = new Set<string>()
+    return entries.filter((group) => {
+      if (seen.has(group.id)) return false
+      seen.add(group.id)
+      return true
+    })
+  }, [org?.telegram_group, telegramGroups])
 
   if (isError) {
     return (
@@ -186,13 +221,17 @@ export function OrganizationDetailPage() {
             <Button
               variant="outline"
               onClick={() => {
-                setChatId(org?.telegram_chat ?? '')
                 setTelegramOpen(true)
               }}
             >
-              <MessageSquare size={14} />
-              Setup Telegram
+              <Plug size={14} />
+              {org?.telegram_group ? 'Change Telegram Group' : 'Setup Telegram'}
             </Button>
+            {org?.telegram_group ? (
+              <Badge className="flex items-center gap-2">
+                Connected: {org.telegram_group.name}
+              </Badge>
+            ) : null}
             <SyncOrgButton orgId={id} />
           </div>
         </div>
@@ -471,28 +510,67 @@ export function OrganizationDetailPage() {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={telegramOpen} onOpenChange={setTelegramOpen}>
+      <Dialog
+        open={telegramOpen}
+        onOpenChange={(openState) => {
+          setTelegramOpen(openState)
+          if (!openState) {
+            setSelectedTelegramGroupId(undefined)
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Setup Telegram</DialogTitle>
           </DialogHeader>
-          <Input
-            placeholder="Telegram chat id"
-            value={chatId}
-            onChange={(event) => setChatId(event.target.value)}
-          />
+          <div className="space-y-2">
+            <Select
+              value={selectedTelegramGroupId}
+              onValueChange={(value) => setSelectedTelegramGroupId(value)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select a Telegram group" />
+              </SelectTrigger>
+              <SelectContent>
+                {telegramGroupOptions.length === 0 ? (
+                  <SelectItem value="no-groups" disabled>
+                    No available Telegram groups
+                  </SelectItem>
+                ) : (
+                  telegramGroupOptions.map((group) => {
+                    const isCurrent = group.id === org?.telegram_group_id
+                    const labelSuffix = isCurrent ? ' (current)' : ''
+                    return (
+                      <SelectItem key={group.id} value={group.id}>
+                        {group.name} ({group.chat_id}){labelSuffix}
+                      </SelectItem>
+                    )
+                  })
+                )}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-slate-500">
+              Only unlinked groups are shown. The current group is included for reference.
+            </p>
+          </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setTelegramOpen(false)}>
               Cancel
             </Button>
             <Button
               variant="primary"
-              disabled={setupTelegram.isPending || chatId.trim().length === 0}
+              disabled={
+                setupTelegram.isPending ||
+                !selectedTelegramGroupId ||
+                selectedTelegramGroupId === org?.telegram_group_id
+              }
               onClick={async () => {
                 try {
-                  await setupTelegram.mutateAsync({ chat_id: chatId })
+                  if (!selectedTelegramGroupId) return
+                  await setupTelegram.mutateAsync({
+                    telegram_group_id: selectedTelegramGroupId,
+                  })
                   pushToast({ title: 'Telegram synced', variant: 'success' })
-                  setChatId('')
                   setTelegramOpen(false)
                 } catch (error) {
                   handle422(error)

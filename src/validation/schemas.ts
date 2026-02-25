@@ -8,7 +8,7 @@ export type LoginFormValues = z.infer<typeof loginSchema>
 
 export const organizationCreateSchema = z.object({
   name: z.string().min(2).max(100),
-  telegram_chat_id: z.string().optional(),
+  telegram_group_id: z.string().uuid().optional(),
   users: z.array(z.string().email()).optional(),
 })
 export type OrganizationCreateValues = z.infer<typeof organizationCreateSchema>

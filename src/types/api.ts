@@ -59,7 +59,7 @@ export interface CreateApplicationResponse {
 
 export interface CreateOrganizationRequest {
   name: string
-  telegram_chat_id?: string | null
+  telegram_group_id?: string | null
   users?: string[] | null
 }
 
@@ -133,7 +133,8 @@ export interface OrganizationDetail {
   grafana_org_id: number | null
   glitchtip_org_id: number | null
   glitchtip_slug: string | null
-  telegram_chat: string | null
+  telegram_group: TelegramGroupRead | null
+  telegram_group_id: string | null
   is_active: boolean
   created_at: string
   updated_at: string
@@ -149,6 +150,8 @@ export interface OrganizationListItem {
   grafana_org_id: number | null
   glitchtip_org_id: number | null
   glitchtip_slug: string | null
+  telegram_group_id: string | null
+  telegram_group_name: string | null
   is_active: boolean
   created_at: string
 }
@@ -166,12 +169,13 @@ export interface ResendInviteResponse {
 }
 
 export interface SetupTelegramRequest {
-  chat_id: string
+  telegram_group_id: string
 }
 
 export interface SetupTelegramResponse {
   org_id: string
-  chat_id: string
+  telegram_group_id: string
+  telegram_group_name: string
   message: string
 }
 
@@ -207,6 +211,7 @@ export interface TelegramGroupRead {
   name: string
   chat_id: string
   org_id: string | null
+  org_name: string | null
   created_at: string
   updated_at: string
 }

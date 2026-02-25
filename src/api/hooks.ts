@@ -55,16 +55,18 @@ export function useHealth() {
   })
 }
 
-export function useOrganizations() {
+export function useOrganizations(withoutTelegram?: boolean, enabled = true) {
   const isAuthenticated = useAuthStore((state) => Boolean(state.encoded))
   return useQuery({
-    queryKey: queryKeys.organizations,
+    queryKey: ['organizations', { withoutTelegram }],
     queryFn: async () => {
-      const { data } = await api.get<OrganizationListItem[]>('/api/organizations')
+      const { data } = await api.get<OrganizationListItem[]>('/api/organizations', {
+        params: withoutTelegram ? { without_telegram: true } : undefined,
+      })
       return data
     },
     staleTime: 30000,
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && enabled,
   })
 }
 
@@ -424,15 +426,17 @@ export function useAllApiKeys() {
   })
 }
 
-export function useTelegramGroups() {
+export function useTelegramGroups(unlinkedOnly?: boolean, enabled = true) {
   const isAuthenticated = useAuthStore((state) => Boolean(state.encoded))
   return useQuery({
-    queryKey: queryKeys.telegramGroups,
+    queryKey: ['telegram-groups', { unlinkedOnly }],
     queryFn: async () => {
-      const { data } = await api.get<TelegramGroupRead[]>('/api/telegram/groups')
+      const { data } = await api.get<TelegramGroupRead[]>('/api/telegram/groups', {
+        params: unlinkedOnly ? { unlinked_only: true } : undefined,
+      })
       return data
     },
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && enabled,
     staleTime: 30000,
   })
 }

@@ -1,15 +1,28 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link2, MessageSquarePlus } from 'lucide-react'
-import { useOrganizations, useTelegramGroups, useUpdateTelegramGroup } from '@/api/hooks'
+import {
+  queryKeys,
+  useOrganizations,
+  useSetupTelegram,
+  useTelegramGroups,
+} from '@/api/hooks'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { ErrorState } from '@/components/shared/ErrorState'
 import { usePageHeader } from '@/components/layout/PageHeaderProvider'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useToastStore } from '@/store/toast'
+import { useQueryClient } from '@tanstack/react-query'
 
 export function TelegramGroupsPage() {
   const { setHeader } = usePageHeader()
@@ -22,13 +35,14 @@ export function TelegramGroupsPage() {
     })
   }, [setHeader])
 
-  const { data, isLoading, isError, refetch } = useTelegramGroups()
-  const { data: organizations } = useOrganizations()
-  const updateGroup = useUpdateTelegramGroup()
-  const pushToast = useToastStore((state) => state.push)
-
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
   const [selectedOrgId, setSelectedOrgId] = useState<string>('')
+
+  const queryClient = useQueryClient()
+  const { data, isLoading, isError, refetch } = useTelegramGroups()
+  const { data: organizations } = useOrganizations(true, Boolean(selectedGroupId))
+  const setupTelegram = useSetupTelegram(selectedOrgId || '')
+  const pushToast = useToastStore((state) => state.push)
 
   const selectedGroup = data?.find((group) => group.id === selectedGroupId) ?? null
   const orgLookup = useMemo(() => {
@@ -74,7 +88,9 @@ export function TelegramGroupsPage() {
                     <td className="py-3 font-semibold text-slate-900">{group.name ?? 'Untitled'}</td>
                     <td className="py-3 text-slate-500">{group.chat_id}</td>
                     <td className="py-3 text-slate-500">
-                      {group.org_id ? orgLookup.get(group.org_id) ?? group.org_id : 'Unlinked'}
+                      {group.org_id
+                        ? group.org_name ?? orgLookup.get(group.org_id) ?? group.org_id
+                        : 'Unlinked'}
                     </td>
                     <td className="py-3 text-slate-500">
                       {new Date(group.created_at).toLocaleDateString()}
@@ -107,7 +123,10 @@ export function TelegramGroupsPage() {
       <Dialog
         open={Boolean(selectedGroupId)}
         onOpenChange={(open) => {
-          if (!open) setSelectedGroupId(null)
+          if (!open) {
+            setSelectedGroupId(null)
+            setSelectedOrgId('')
+          }
         }}
       >
         <DialogContent>
@@ -117,33 +136,41 @@ export function TelegramGroupsPage() {
           <div className="text-sm text-slate-500">
             {selectedGroup?.name ?? 'Group'} - {selectedGroup?.chat_id}
           </div>
-          <select
-            className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700"
-            value={selectedOrgId}
-            onChange={(event) => setSelectedOrgId(event.target.value)}
-          >
-            <option value="">Select organization</option>
-            {(organizations ?? []).map((org) => (
-              <option key={org.id} value={org.id}>
-                {org.name}
-              </option>
-            ))}
-          </select>
+          <Select value={selectedOrgId || undefined} onValueChange={setSelectedOrgId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select organization" />
+            </SelectTrigger>
+            <SelectContent>
+              {(organizations ?? []).length === 0 ? (
+                <SelectItem value="no-orgs" disabled>
+                  All organizations already have Telegram groups
+                </SelectItem>
+              ) : (
+                (organizations ?? []).map((org) => (
+                  <SelectItem key={org.id} value={org.id}>
+                    {org.name}
+                  </SelectItem>
+                ))
+              )}
+            </SelectContent>
+          </Select>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setSelectedGroupId(null)}>
               Cancel
             </Button>
             <Button
               variant="primary"
-              disabled={!selectedOrgId || updateGroup.isPending}
+              disabled={!selectedOrgId || setupTelegram.isPending}
               onClick={async () => {
                 if (!selectedGroupId || !selectedOrgId) return
                 try {
-                  await updateGroup.mutateAsync({
-                    groupId: selectedGroupId,
-                    payload: { org_id: selectedOrgId },
+                  await setupTelegram.mutateAsync({ telegram_group_id: selectedGroupId })
+                  pushToast({
+                    title: `Telegram group linked to ${orgLookup.get(selectedOrgId) ?? 'organization'}`,
+                    variant: 'success',
                   })
-                  pushToast({ title: 'Group linked', variant: 'success' })
+                  queryClient.invalidateQueries({ queryKey: queryKeys.telegramGroups })
+                  queryClient.invalidateQueries({ queryKey: queryKeys.organizations })
                   setSelectedGroupId(null)
                 } catch {
                   pushToast({ title: 'Link failed', message: 'Please try again.', variant: 'error' })
