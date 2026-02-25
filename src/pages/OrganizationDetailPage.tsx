@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import {
-  AlertTriangle,
   ArrowLeft,
   Copy,
   Globe,

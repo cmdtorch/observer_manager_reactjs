@@ -8,13 +8,14 @@ import { usePageHeader } from '@/components/layout/PageHeaderProvider'
 export function TopBar() {
   const { header } = usePageHeader()
   const clearCredentials = useAuthStore((state) => state.clearCredentials)
+  const breadcrumb = header.breadcrumb ?? []
 
   return (
     <header className="flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-slate-200 bg-white px-6 py-4 shadow-sm">
       <div>
-        {header.breadcrumb?.length ? (
+        {breadcrumb.length ? (
           <nav className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-            {header.breadcrumb.map((item, index) => (
+            {breadcrumb.map((item, index) => (
               <div key={`${item.label}-${index}`} className="flex items-center gap-2">
                 {item.href ? (
                   <Link className="transition hover:text-slate-900" to={item.href}>
@@ -23,7 +24,7 @@ export function TopBar() {
                 ) : (
                   <span className="text-slate-700">{item.label}</span>
                 )}
-                {index < header.breadcrumb.length - 1 ? <span>/</span> : null}
+                {index < breadcrumb.length - 1 ? <span>/</span> : null}
               </div>
             ))}
           </nav>
